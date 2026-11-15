@@ -1,3 +1,4 @@
+#include <sys/ioctl.h>
 #include <sys/epoll.h>
 #include <syslog.h>
 #include <unistd.h>
@@ -81,10 +82,16 @@ int main(int argc, char ** argv) {
 	// ssh login command
 	char *login_cmd = argv[1];
 
-	// open terminal for ssh
+	// get current's terminal winsize
+	struct winsize winsize;
+	ioctl(tty_fd, TIOCGWINSZ, &winsize);
+	syslog(LOG_INFO, "ws_row = %d, ws_col = %d, ws_xpixel = %d, ws_ypixel = %d", winsize.ws_row, winsize.ws_col, winsize.ws_xpixel, winsize.ws_ypixel);
+
+	// open terminal for ssh with the current winsize
 	int master_fd;
 	int slave_fd;
-	int result = openpty(&master_fd, &slave_fd, NULL, NULL, NULL);
+	int result = openpty(&master_fd, &slave_fd, NULL, NULL, &winsize);
+
 	syslog(LOG_INFO, "master terminal = %s\n", ttyname(master_fd));
 	syslog(LOG_INFO, "slave terminal = %s\n", ttyname(slave_fd));
 	pid_t pid = fork();
