@@ -15,6 +15,7 @@
 // volatile:     since the signal handler is called outside normal execution flow
 // sig_atomic_t: since reading normal int/long/etc... are not necesserily atomic and signal may be received during execution of any instruction
 static volatile sig_atomic_t sigchld;
+static volatile sig_atomic_t sigwinch;
 
 #define CHECK_ERRNO(func) ({\
 	int result = func; \
@@ -24,6 +25,13 @@ static volatile sig_atomic_t sigchld;
 	}\
 	result; \
 })
+
+static inline void resize_window(int source_fd, int target_fd) {
+	struct winsize winsize;
+	CHECK_ERRNO(ioctl(source_fd, TIOCGWINSZ, &winsize));
+	syslog(LOG_INFO, "winsize changed. ws_row = %d, ws_col = %d, ws_xpixel = %d, ws_ypizel = %d", winsize.ws_row, winsize.ws_col, winsize.ws_xpixel, winsize.ws_ypixel);
+	CHECK_ERRNO(ioctl(target_fd, TIOCSWINSZ, &winsize));
+}
 
 static inline void handle_master_fd(int master_fd) {
 	char buf[1024];
@@ -44,6 +52,11 @@ void sigchld_handler(int signum) {
 	sigchld = 1;
 }
 
+// TODO: merge into 1 signal handler
+void sigwinch_handler(int signum) {
+	sigwinch = 1;
+}
+
 int main(int argc, char ** argv) {
 	if (argc < 2) {
 		fprintf(stderr, "not enough arguments: %d, the argument should be login@host\n", argc);
@@ -58,12 +71,19 @@ int main(int argc, char ** argv) {
 	openlog("ssh_nopass", LOG_PID, LOG_USER);
 	syslog(LOG_INFO, "controlling terminal = %s\n", tty_name);
 
-	// register sigchld signal handler
 	struct sigaction act;
+	//
+	// register sigchld signal handler
 	act.sa_handler = sigchld_handler;
 	act.sa_flags = 0;
 	sigemptyset(&act.sa_mask);
 	CHECK_ERRNO(sigaction(SIGCHLD, &act, NULL));
+
+	// register sigwinch signal handler
+	act.sa_handler = sigwinch_handler;
+	act.sa_flags = 0;
+	sigemptyset(&act.sa_mask);
+	CHECK_ERRNO(sigaction(SIGWINCH, &act, NULL));
 
 	// int tty_fd = open(tty_name, O_RDWR);
 	// an fd attached to a terminal
@@ -108,7 +128,7 @@ int main(int argc, char ** argv) {
 		syslog(LOG_INFO, "%.*s", count, buf);
 
 		// enter password from env variable
-		char env_str[32];
+		char env_str[64];
 		char *env_pwd = getenv("SSH_PASSWORD");
 		snprintf(env_str, sizeof env_str, "%s\n", env_pwd);
 		write(master_fd, env_str, strlen(env_str));
@@ -138,6 +158,10 @@ int main(int argc, char ** argv) {
 				syslog(LOG_INFO, "Recieved signal: SIGCHLD");
 				tcsetattr(STDIN_FILENO, TCSANOW, &current);
 				_exit(0);
+			}
+			if (sigwinch) {
+				resize_window(STDIN_FILENO, master_fd);
+				sigwinch = 0;
 			}
 			int number_ready = epoll_wait(epoll, events, 32, 0); //TODO: Replace 32 with sizeof(events) / sizeof (*events)
 			for (int i = 0; i < number_ready; i++) {
