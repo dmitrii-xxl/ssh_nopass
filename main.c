@@ -94,6 +94,7 @@ int main(int argc, char ** argv) {
 	struct termios termios;
 	int retval_getattr = tcgetattr(tty_fd, &termios);
 	struct termios current = termios;
+	struct termios slave = termios;
 	syslog(LOG_INFO, "getattr retval = %d\n", retval_getattr);
 	cfmakeraw(&termios);
 	int retval_setattr = tcsetattr(tty_fd, TCSANOW, &termios);
@@ -110,7 +111,7 @@ int main(int argc, char ** argv) {
 	// open terminal for ssh with the current winsize
 	int master_fd;
 	int slave_fd;
-	int result = openpty(&master_fd, &slave_fd, NULL, NULL, &winsize);
+	int result = openpty(&master_fd, &slave_fd, NULL, &slave, &winsize);
 
 	syslog(LOG_INFO, "master terminal = %s\n", ttyname(master_fd));
 	syslog(LOG_INFO, "slave terminal = %s\n", ttyname(slave_fd));
@@ -119,7 +120,8 @@ int main(int argc, char ** argv) {
 		login_tty(slave_fd);
 		char *command = "/usr/bin/ssh";
 		char *const arguments[] = {"ssh", login_cmd, NULL};
-		execve(command, arguments, NULL);
+		char *envp[] = {"TERM=xterm-256color", NULL};
+		execve(command, arguments, envp);
 	} else {
 		char buf[8192];
 
