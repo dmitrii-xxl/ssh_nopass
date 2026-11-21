@@ -120,6 +120,8 @@ int main(int argc, char ** argv) {
 		login_tty(slave_fd);
 		char *command = "/usr/bin/ssh";
 		char *const arguments[] = {"ssh", login_cmd, NULL};
+		//"TERM=xterm-256color" is necessary to avoid default 'dumb' terminal.
+		//Dumb terminal makes it horizontal autoscrolling and inhibits vim usage
 		char *envp[] = {"TERM=xterm-256color", NULL};
 		execve(command, arguments, envp);
 	} else {
